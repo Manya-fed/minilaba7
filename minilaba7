@@ -4,48 +4,105 @@ from sklearn import datasets
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
-from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.naive_bayes import GaussianNB
 
-def get_data():
+def generate_datasets():
+    n_samples = 500
     seed = 30
-    return [
-        datasets.make_circles(n_samples=500, factor=0.5, noise=0.05, random_state=seed),
-        datasets.make_moons(n_samples=500, noise=0.05, random_state=seed),
-        datasets.make_blobs(n_samples=500, cluster_std=[1.0, 0.5], random_state=seed, centers=2)
-    ]
+    random_state = 170
+    # Все 5 вариантов генерации данных
+    noisy_circles = datasets.make_circles(n_samples=n_samples, factor=0.5, noise=0.05, random_state=seed)
+    noisy_moons = datasets.make_moons(n_samples=n_samples, noise=0.05, random_state=seed)
+    varied = datasets.make_blobs(n_samples=n_samples, cluster_std=[1.0, 0.5], random_state=seed, centers=2)
+    x, y = datasets.make_blobs(n_samples=n_samples, random_state=random_state, centers=2)
+    transformation = [[0.6, -0.6], [-0.4, 0.8]]
+    x_aniso = np.dot(x, transformation)
+    aniso = (x_aniso, y)
+    blobs = datasets.make_blobs(n_samples=n_samples, random_state=seed, centers=2)
+    return [noisy_circles, noisy_moons, varied, aniso, blobs]
 
-def plot_results(ax, model, X, y):
- 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+def train_knn(x_train, y_train):
+    model = KNeighborsClassifier(n_neighbors=5)
+    model.fit(x_train, y_train)
+    return model
+
+def train_svm(x_train, y_train):
+    model = SVC(kernel='rbf', C=1.0, gamma='scale', probability=True)
+    model.fit(x_train, y_train)
+    return model
+
+def train_decision_tree(x_train, y_train):
+    model = DecisionTreeClassifier(max_depth=4, random_state=42)
+    model.fit(x_train, y_train)
+    return model
+
+def train_random_forest(x_train, y_train):
+    model = RandomForestClassifier(n_estimators=50, max_depth=4, random_state=42)
+    model.fit(x_train, y_train)
+    return model
+
+def train_naive_bayes(x_train, y_train):
+    model = GaussianNB()
+    model.fit(x_train, y_train)
+    return model
+
+def plot_decision_boundary(ax, model, x, y, x_train, y_train, x_test, y_test, title):
+    # Улучшенная визуализация с контурными линиями
+    h = 0.02  # шаг сетки
+    x_min, x_max = x[:, 0].min() - 0.5, x[:, 0].max() + 0.5
+    y_min, y_max = x[:, 1].min() - 0.5, x[:, 1].max() + 0.5
+    xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
+                         np.arange(y_min, y_max, h))
+
+    if hasattr(model, 'predict_proba'):
+        Z = model.predict_proba(np.c_[xx.ravel(), yy.ravel()])[:, 1]
+    else:
+        Z = model.predict(np.c_[xx.ravel(), yy.ravel()])
+    Z = Z.reshape(xx.shape)
+
+    ax.contourf(xx, yy, Z, alpha=0.8, cmap=plt.cm.RdBu)
+    ax.contour(xx, yy, Z, levels=[0.5], linewidths=2, colors='black')
+
+    ax.scatter(x_train[:, 0], x_train[:, 1], c=y_train, cmap=plt.cm.RdBu,
+               edgecolors='k', s=40, alpha=0.7, label='Train')
+
+    y_pred = model.predict(x_test)
+    test_colors = ['lime' if y_test[i] == y_pred[i] else 'red' for i in range(len(y_test))]
+    ax.scatter(x_test[:, 0], x_test[:, 1], c=test_colors, marker='s',
+               edgecolors='k', s=60, alpha=0.9, label='Test')
     
+    ax.set_title(title, fontsize=10)
+    ax.set_xticks(())
+    ax.set_yticks(())
 
-    model.fit(X_train, y_train)
-    
-    x_min, x_max = X[:, 0].min() - 1, X[:, 0].max() + 1
-    y_min, y_max = X[:, 1].min() - 1, X[:, 1].max() + 1
-    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 100),
-                         np.linspace(y_min, y_max, 100))
-
-    Z = model.predict(np.c_[xx.ravel(), yy.ravel()]).reshape(xx.shape)
-    ax.contourf(xx, yy, Z, alpha=0.3)
-    
-    y_pred = model.predict(X_test)
-    colors = ['red' if y_test[i] != y_pred[i] else 'blue' for i in range(len(y_test))]
-    ax.scatter(X_test[:, 0], X_test[:, 1], c=colors, s=10)
+datasets = generate_datasets()
+dataset_names = ['Круги', 'Полумесяцы', 'Разные дисперсии', 'Анизотропные', 'Сферические']
 
 
-data = get_data()
 models = [
-    ('KNN', KNeighborsClassifier(n_neighbors=5)),
-    ('SVM', SVC(kernel='rbf')),
-    ('LogReg', LogisticRegression())
+    ('KNN', train_knn),
+    ('SVM', train_svm),
+    ('Дерево', train_decision_tree),
+    ('Случайный лес', train_random_forest),
+    ('Наивный Байес', train_naive_bayes)
 ]
 
-fig, axs = plt.subplots(3, 3, figsize=(10, 8))
-for i, (X, y) in enumerate(data):
-    for j, (name, model) in enumerate(models):
-        plot_results(axs[i,j], model, X, y)
-        if i == 0:
-            axs[i,j].set_title(name)
-plt.tight_layout()
+
+fig, axes = plt.subplots(5, 5, figsize=(20, 20))
+plt.subplots_adjust(hspace=0.4, wspace=0.3)
+
+for i, (data, name) in enumerate(zip(datasets, dataset_names)):
+    x, y = data
+    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
+    
+    for j, (model_name, train_func) in enumerate(models):
+        model = train_func(x_train, y_train)
+        plot_decision_boundary(
+            axes[i, j], model, x, y, x_train, y_train, x_test, y_test,
+            f'{name}\n{model_name}'
+        )
+
+plt.suptitle('Сравнение 5 методов классификации на 5 типах данных', fontsize=16, y=0.99)
 plt.show()
